@@ -1,24 +1,47 @@
 """
-## Setup
+Speech-to-Speech Companion Agent    
+---------------------------------------
 
-Before running this script, ensure the `GOOGLE_API_KEY` environment
-variable is set to the api-key you obtained from Google AI Studio.
+This module implements a real-time, context-aware conversational agent for elderly care
+built on top of the Google Gemini 2.0 Flash Live API. It integrates low-latency
+speech streaming, voice activity detection (VAD), transcription, and persistent memory
+to enable natural, ongoing dialogue between a user and the AI.
 
-Important: **Use headphones**. 
+Main Components
+---------------
+1. MemoryManager
+   - Manages persistent `memory.json` storing past user and assistant utterances.
+   - Performs asynchronous Whisper transcription for both sides.
+   - Maintains a rolling conversation summary injected into the system prompt
+     each session for continuity.
 
-This script uses the system default audio
-input and output, which often won't include echo cancellation. So to prevent
-the model from interrupting itself it is important that you use headphones. 
+2. WavWriter
+   - Buffers raw microphone PCM data using `webrtcvad` to detect voiced segments.
+   - Writes per-utterance `.wav` files and enqueues them for transcription.
+   - Prevents fragmentation via pre-buffering and silence-based rollover.
 
-OR use the `--suppress-echo` flag to pause microphone capture (DOES NOT WORK RIGHT NOW).
+3. AudioLoop
+   - Core orchestrator that manages the audio send/receive pipeline:
+        • Captures microphone input and streams it to Gemini.
+        • Receives streamed audio responses and plays them in real time.
+        • Optionally suppresses echo by pausing mic capture during playback.
+   - Handles async task orchestration using Python’s `asyncio.TaskGroup`.
 
-## Run
+System Behavior
+---------------
+- “Ferb” is the agent persona, designed to check in on elderly adults in a
+  warm, conversational manner (see SYSTEM_PROMPT).
+- The memory summary is appended to the model’s system prompt for each session,
+  allowing continuity and adaptive responses over time.
+- The pipeline uses 16 kHz for outgoing and 24 kHz for incoming audio.
 
-```
+Run Instructions
+----------------
+```bash
 python3 -m venv myenv
 source myenv/bin/activate
 pip install google-genai opencv-python pyaudio pillow mss openai-whisper webrtcvad
-python v3.py 
+python v3.py
 ```
 """
 
