@@ -42,7 +42,18 @@ python3 -m venv myenv
 source myenv/bin/activate
 pip install google-genai opencv-python pyaudio pillow mss openai-whisper webrtcvad
 python v3.py
+export GOOGLE_API_KEY=
 ```
+
+
+TODO: 
+Test performance on Raspberry compute
+Accept startup user parameters: (name, age, hobbies, health conditions, robot personalization preference)
+Echo suppression
+Iterate on memory summarization strategy
+User profile memory
+
+Emulate caregiver's conversational style?
 """
 
 import asyncio
@@ -110,7 +121,6 @@ CONFIG = {"response_modalities": ["AUDIO"]}
 
 pya = pyaudio.PyAudio()
 
-
 MEMORY_FILE = "memory.json"
 
 class MemoryManager:
@@ -125,10 +135,17 @@ class MemoryManager:
 
     def load_memory(self):
         if self.memory_file.exists():
-            data = json.loads(self.memory_file.read_text())
-            self.summary = data.get("summary", "")
-            self.conversation_log = data.get("conversation_log", [])
-            print(f"[Memory] Loaded {len(self.conversation_log)} turns from previous sessions.")
+            try:
+                content = self.memory_file.read_text().strip()
+                if not content:  # Empty file
+                    print("[Memory] Memory file is empty. Starting fresh.")
+                    return
+                data = json.loads(content)
+                self.summary = data.get("summary", "")
+                self.conversation_log = data.get("conversation_log", [])
+                print(f"[Memory] Loaded {len(self.conversation_log)} turns from previous sessions.")
+            except json.JSONDecodeError as e:
+                print(f"[Memory] ⚠️ Invalid JSON in memory file: {e}. Starting fresh.")
         else:
             print("[Memory] No previous memory found.")
 
