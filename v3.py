@@ -111,7 +111,7 @@ RECEIVE_SAMPLE_RATE = 24000
 SEND_SAMPLE_RATE = 16000
 CHUNK_SIZE = int(SEND_SAMPLE_RATE * 0.02)  # 20 ms frame = 320 samples
 
-MODEL = "models/gemini-2.0-flash-live-001"
+MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
 DEFAULT_MODE = "none"
 
@@ -297,6 +297,7 @@ class AudioLoop:
         self.memory_manager = MemoryManager()
         
         self._assistant_done_talking = asyncio.Event()
+        self._mic_paused = False
 
         
 
@@ -395,7 +396,7 @@ class AudioLoop:
             frames_per_buffer=CHUNK_SIZE,
         )
         
-        writer = WavWriter(pya, FORMAT, CHANNELS, SEND_SAMPLE_RATE, CHUNK_SIZE, vad_aggressiveness=2)
+        writer = WavWriter(pya, FORMAT, CHANNELS, SEND_SAMPLE_RATE, CHUNK_SIZE, vad_aggressiveness=3)
         writer.memory_manager = self.memory_manager
 
         if __debug__:
@@ -404,6 +405,15 @@ class AudioLoop:
             kwargs = {}
         try:
             while True:
+                if self.suppress_echo and not self._assistant_done_talking.is_set():
+                    if not self._mic_paused:
+                        await asyncio.to_thread(self.audio_stream.stop_stream)
+                        self._mic_paused = True
+                    await self._assistant_done_talking.wait()
+                    await asyncio.to_thread(self.audio_stream.start_stream)
+                    await asyncio.to_thread(self._drain_mic_buffer, kwargs)
+                    self._mic_paused = False
+
                 data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
 
                 # 🧩 Soft echo suppression
@@ -463,6 +473,15 @@ class AudioLoop:
             bytestream = await self.audio_in_queue.get()
             await asyncio.to_thread(stream.write, bytestream)
 
+    def _drain_mic_buffer(self, read_kwargs, drain_seconds=0.25):
+        frames_to_drain = int(SEND_SAMPLE_RATE * drain_seconds)
+        chunks = max(1, frames_to_drain // CHUNK_SIZE)
+        for _ in range(chunks):
+            try:
+                self.audio_stream.read(CHUNK_SIZE, **read_kwargs)
+            except Exception:
+                break
+
     async def run(self):
         try:
             async with (
@@ -519,11 +538,11 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
-        "--suppress-echo",
+        "--no-suppress-echo",
         action="store_true",
-        help="Temporarily pause microphone capture while the assistant is speaking."
+        help="Disable echo suppression (not recommended)."
     )
 
     args = parser.parse_args()
-    main = AudioLoop(video_mode=args.mode)
+    main = AudioLoop(video_mode=args.mode, suppress_echo=not args.no_suppress_echo)
     asyncio.run(main.run())
